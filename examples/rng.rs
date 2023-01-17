@@ -1,8 +1,10 @@
+// Writes a sequence of pseudo-random bytes to stdout.
+
 use std::io::Write;
 use xox_random::Rng;
 
 fn main() {
-  let mut g = Rng::new(*b"autovivification");
+  let mut g = Rng::from_seed(*b"autovivification");
   let mut out = std::io::stdout().lock();
   let a = &mut [0u8; 4096];
 
