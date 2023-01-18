@@ -114,7 +114,6 @@
 
 use core::array;
 use core::cell::Cell;
-use core::hint;
 use core::num::NonZeroU128;
 
 /// A fast non-cryptographic random number generator.
@@ -134,10 +133,8 @@ const fn umulh(x: u64, y: u64) -> u64 {
 
 #[inline(always)]
 const fn make_state(seed: [u8; 16]) -> NonZeroU128 {
-  match NonZeroU128::new(u128::from_le_bytes(seed)) {
-    None => unsafe { NonZeroU128::new_unchecked(1) },
-    Some(seed) => seed
-  }
+  let seed = u128::from_le_bytes(seed);
+  unsafe { NonZeroU128::new_unchecked(seed | 1) }
 }
 
 #[inline(never)]
@@ -202,13 +199,6 @@ impl Rng {
     c
   }
 
-  /// Samples a chunk of i.i.d. `u64`s from the uniform distribution.
-
-  #[inline]
-  pub fn chunk<const N: usize>(&mut self) -> [u64; N] {
-    array::from_fn(|_| self.next())
-  }
-
   /// Splits off a new random number generator that may be used in addition to
   /// the original.
 
@@ -217,8 +207,14 @@ impl Rng {
     Self { x: self.next() | 1, y: self.next() }
   }
 
-  /// Fills a slice with a sample of i.i.d. bytes from the uniform
-  /// distribution.
+  /// Samples an array of i.i.d. `u64`s from the uniform distribution.
+
+  #[inline]
+  pub fn chunk<const N: usize>(&mut self ) -> [u64; N] {
+    array::from_fn(|_| self.next())
+  }
+
+  /// Fills a slice with a i.i.d. bytes sampled from the uniform distribution.
 
   pub fn fill(&mut self, mut dst: &mut [u8]) {
     if dst.len() == 0 { return; }
@@ -226,24 +222,16 @@ impl Rng {
     let mut x;
 
     loop {
-      x = self.next().to_le_bytes();
-
-      if dst.len() <= 8 { break; }
-
-      dst[.. 8].copy_from_slice(&x);
+      x = self.next();
+      if dst.len() < 8 { break; }
+      dst[.. 8].copy_from_slice(&x.to_le_bytes());
       dst = &mut dst[8 ..];
     }
 
-    match dst.len() {
-      1 => { dst.copy_from_slice(&x[.. 1]) }
-      2 => { dst.copy_from_slice(&x[.. 2]) }
-      3 => { dst.copy_from_slice(&x[.. 3]) }
-      4 => { dst.copy_from_slice(&x[.. 4]) }
-      5 => { dst.copy_from_slice(&x[.. 5]) }
-      6 => { dst.copy_from_slice(&x[.. 6]) }
-      7 => { dst.copy_from_slice(&x[.. 7]) }
-      8 => { dst.copy_from_slice(&x[.. 8]) }
-      _ => { unsafe { hint::unreachable_unchecked() } }
+    while dst.len() > 0 {
+      dst[0] = x as u8;
+      x >>= 8;
+      dst = &mut dst[1 ..];
     }
   }
 }
@@ -270,14 +258,10 @@ pub mod thread_local {
     })
   }
 
-  /// Samples a chunk of i.i.d. `u64`s from the uniform distribution.
-  ///
-  /// It is better to sample one larger chunk rather than multiple smaller
-  /// chunks, because doing so reduces the number of accesses to thread-local
-  /// storage.
+  /// Samples a `u64` from the uniform distribution.
 
-  pub fn chunk<const N: usize>() -> [u64; N] {
-    with_rng_non_reentrant(Rng::chunk)
+  pub fn next() -> u64 {
+    with_rng_non_reentrant(Rng::next)
   }
 
   /// Splits off a new random number generator from the thread-local generator.
@@ -288,5 +272,17 @@ pub mod thread_local {
 
   pub fn split() -> Rng {
     with_rng_non_reentrant(Rng::split)
+  }
+
+  /// Samples an array of i.i.d. `u64`s from the uniform distribution.
+
+  pub fn chunk<const N: usize>() -> [u64; N] {
+    with_rng_non_reentrant(Rng::chunk)
+  }
+
+  /// Fills a slice with a i.i.d. bytes sampled from the uniform distribution.
+
+  pub fn fill(dst: &mut [u8]) {
+    with_rng_non_reentrant(|g| g.fill(dst))
   }
 }
