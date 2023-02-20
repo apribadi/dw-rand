@@ -1,22 +1,16 @@
 //! This module implements a fast non-cryptographic random number generator.
 //!
 //! The random number generator has a state space of size `2**128 - 1` and also
-//! a period of length `2**128 - 1`. I believe that it generates high-quality
-//! random numbers, but should not be used for cryptographic purposes. It is
-//! very fast.
-//!
-//! TODO: practrand results
-//!
-//! TODO: benchmarks
+//! a period of length `2**128 - 1`.
 //!
 //! # Design
 //!
 //! ## The State Space and Output Space
 //!
-//! Like many other designs for random number generators, this design can be
-//! thought of as a combination of two components: a state transition function
-//! and an output function. Let `U` be the state space and `V` be the output
-//! space. Then with the two functions
+//! Like many other random number generator designs, this one can be viewed of
+//! as a combination of two components: a state transition function and an
+//! output function. Let `U` be the state space and `V` be the output space.
+//! Then with the two functions
 //!
 //! ```text
 //! f : U -> U
@@ -41,9 +35,9 @@
 //! g : NonZeroU128 -> u64
 //! ```
 //!
-//! The size of the state space was chosen because
-//! 64 bits is too small for some plausible applications, while 128 bits should
-//! be sufficient for almost all non-cryptographic purposes.
+//! The size of the state space was chosen because 64 bits is too small for
+//! some plausible applications, while 128 bits should be sufficient for almost
+//! all non-cryptographic purposes.
 //!
 //! ## The State Transition Function and its Period
 //!
@@ -96,21 +90,13 @@
 //!
 //! ## Comparisons with Selected RNGs
 //!
-//! - lcg128
-//!
 //! - pcg64-dxsm
-//!
-//! - xorshift128+
 //!
 //! - xoroshiro128++
 //!
-//! - romuduo
-//!
-//! - splitmix64
-//!
-//! - wyrand
-//!
 //! - lxm-l64x128
+//!
+//! - mwc256xxa64
 
 use core::array;
 use core::cell::Cell;
@@ -129,20 +115,6 @@ pub struct Rng {
 #[inline(always)]
 const fn umulh(x: u64, y: u64) -> u64 {
   (((x as u128) * (y as u128)) >> 64) as u64
-}
-
-#[inline(always)]
-const fn make_state(seed: [u8; 16]) -> NonZeroU128 {
-  let seed = u128::from_le_bytes(seed);
-  unsafe { NonZeroU128::new_unchecked(seed | 1) }
-}
-
-#[inline(never)]
-#[cold]
-fn get_system_seed() -> [u8; 16] {
-  let mut seed = [0; 16];
-  getrandom::getrandom(&mut seed).expect("getrandom::getrandom failed!");
-  seed
 }
 
 impl Rng {
@@ -164,15 +136,25 @@ impl Rng {
 
   #[inline]
   pub const fn from_seed(seed: [u8; 16]) -> Self {
-    Self::new(make_state(seed))
+    match NonZeroU128::new(u128::from_le_bytes(seed)) {
+      None => {
+        let seed = *b"seeded with zero";
+        let seed = u128::from_le_bytes(seed);
+        Self::new(unsafe { NonZeroU128::new_unchecked(seed) })
+      }
+      Some(state) => Self::new(state)
+    }
   }
 
   /// Creates a new random number generator with a seed requested from the
   /// system through a method that may depend on the platform.
 
-  #[inline]
+  #[inline(never)]
+  #[cold]
   pub fn from_system_seed() -> Self {
-    Self::from_seed(get_system_seed())
+    let mut seed = [0; 16];
+    getrandom::getrandom(&mut seed).expect("getrandom::getrandom failed!");
+    Self::from_seed(seed)
   }
 
   /// Accesses the random number generator's current state.
@@ -249,9 +231,11 @@ pub mod thread_local {
   #[inline(always)]
   fn with_rng_non_reentrant<F, A>(f: F) -> A where F: FnOnce(&mut Rng) -> A {
     RNG.with(|c| {
-      let s = c.get();
-      let s = NonZeroU128::new(s).unwrap_or_else(|| make_state(get_system_seed()));
-      let mut g = Rng::new(s);
+      let mut g =
+        match NonZeroU128::new(c.get()) {
+          None => Rng::from_system_seed(),
+          Some(state) => Rng::new(state)
+        };
       let a = f(&mut g);
       c.set(u128::from(g.state()));
       a

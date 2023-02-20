@@ -8,3 +8,4 @@ getrandom = "0.2.8"
 
 [dev-dependencies]
 expect-test = "1.4.0"
+trivium = { git = "https://github.com/apribadi/trivium" }
