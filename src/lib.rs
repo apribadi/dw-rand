@@ -107,10 +107,7 @@ use core::num::NonZeroU128;
 /// The [module documentation](self) discusses the design of the generator.
 
 #[derive(Clone)]
-pub struct Rng {
-  x: u64,
-  y: u64,
-}
+pub struct Rng(NonZeroU128);
 
 #[inline(always)]
 const fn umulh(x: u64, y: u64) -> u64 {
@@ -118,31 +115,43 @@ const fn umulh(x: u64, y: u64) -> u64 {
 }
 
 impl Rng {
+  /// The core operation of this random number generator. Takes a state and
+  /// returns a new state along with a pseudo-random number.
+
+  #[inline(always)]
+  pub const fn next(state: NonZeroU128) -> (NonZeroU128, u64) {
+    let s = state.get();
+    let a = s as u64;
+    let b = (s >> 64) as u64;
+    let c = a.rotate_right(7) ^ b;
+    let d = a ^ a >> 19;
+    let s = (c as u128) | ((d as u128) << 64);
+    let x = c.wrapping_add(a.wrapping_mul(b) ^ umulh(a, b));
+    (unsafe { NonZeroU128::new_unchecked(s) }, x)
+  }
+
   /// Creates a new random number generator starting from the given state. A
   /// good start state should be drawn from a distribution with sufficient
   /// entropy.
 
-  #[inline]
+  #[inline(always)]
   pub const fn new(state: NonZeroU128) -> Self {
-    let s = state.get();
-    let x = s as u64;
-    let y = (s >> 64) as u64;
-    Self { x, y }
+    Self(state)
   }
 
   /// Creates a new random number generator using the given seed to create the
   /// start state. A good seed should be drawn from a distribution with
   /// sufficient entropy.
 
-  #[inline]
+  #[inline(always)]
   pub const fn from_seed(seed: [u8; 16]) -> Self {
     match NonZeroU128::new(u128::from_le_bytes(seed)) {
+      Some(state) => Self::new(state),
       None => {
         let seed = *b"seeded with zero";
         let seed = u128::from_le_bytes(seed);
         Self::new(unsafe { NonZeroU128::new_unchecked(seed) })
       }
-      Some(state) => Self::new(state)
     }
   }
 
@@ -159,41 +168,36 @@ impl Rng {
 
   /// Accesses the random number generator's current state.
 
-  #[inline]
+  #[inline(always)]
   pub fn state(&self) -> NonZeroU128 {
-    let x = self.x;
-    let y = self.y;
-    let s = (x as u128) | ((y as u128) << 64);
-    unsafe { NonZeroU128::new_unchecked(s) }
+    self.0
   }
 
   /// Samples a `u64` from the uniform distribution.
 
-  #[inline]
-  pub fn next(&mut self) -> u64 {
-    let x = self.x;
-    let y = self.y;
-    let a = x.rotate_right(7) ^ y;
-    let b = x ^ x >> 19;
-    let c = a.wrapping_add(x.wrapping_mul(y) ^ umulh(x, y));
-    self.x = a;
-    self.y = b;
-    c
+  #[inline(always)]
+  pub fn u64(&mut self) -> u64 {
+    let (s, x) = Self::next(self.0);
+    self.0 = s;
+    x
   }
 
   /// Splits off a new random number generator that may be used in addition to
   /// the original.
 
-  #[inline]
+  #[inline(always)]
   pub fn split(&mut self) -> Self {
-    Self { x: self.next() | 1, y: self.next() }
+    let x = self.u64() | 1;
+    let y = self.u64();
+    let s = (x as u128) | ((y as u128) << 64);
+    Self::new(unsafe { NonZeroU128::new_unchecked(s) })
   }
 
   /// Samples an array of i.i.d. `u64`s from the uniform distribution.
 
   #[inline]
   pub fn chunk<const N: usize>(&mut self ) -> [u64; N] {
-    array::from_fn(|_| self.next())
+    array::from_fn(|_| self.u64())
   }
 
   /// Fills a slice with a i.i.d. bytes sampled from the uniform distribution.
@@ -204,7 +208,7 @@ impl Rng {
     let mut x;
 
     loop {
-      x = self.next();
+      x = self.u64();
       if dst.len() < 8 { break; }
       dst[.. 8].copy_from_slice(&x.to_le_bytes());
       dst = &mut dst[8 ..];
@@ -244,8 +248,8 @@ pub mod thread_local {
 
   /// Samples a `u64` from the uniform distribution.
 
-  pub fn next() -> u64 {
-    with_rng_non_reentrant(Rng::next)
+  pub fn u64() -> u64 {
+    with_rng_non_reentrant(Rng::u64)
   }
 
   /// Splits off a new random number generator from the thread-local generator.
