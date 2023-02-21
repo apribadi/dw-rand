@@ -26,7 +26,7 @@ impl BenchRng for Xox {
 
   #[inline]
   fn u64(&mut self) -> u64 {
-    self.next()
+    self.u64()
   }
 }
 
