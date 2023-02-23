@@ -167,7 +167,7 @@ pub mod thread_local {
     })
   }
 
-  /// Splits off a random number generator from the thread-local instance.
+  /// Splits off a new random number generator from the thread-local instance.
   ///
   /// If you need to generate many random numbers, then it is good to first get
   /// a `split` generator because you can then use that generator without
