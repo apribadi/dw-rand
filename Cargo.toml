@@ -4,8 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-getrandom = "0.2.8"
+getrandom = { version = "0.2.8", optional = true }
 
 [dev-dependencies]
 expect-test = "1.4.0"
 trivium = { git = "https://github.com/apribadi/trivium" }
+
+[features]
+std = []
+thread-local = ["getrandom", "std"]

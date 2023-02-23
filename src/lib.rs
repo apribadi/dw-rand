@@ -1,110 +1,20 @@
-//! This module implements a fast non-cryptographic random number generator.
-//!
-//! The random number generator has a state space of size `2**128 - 1` and also
-//! a period of length `2**128 - 1`.
-//!
-//! # Design
-//!
-//! ## The State Space and Output Space
-//!
-//! Like many other random number generator designs, this one can be viewed of
-//! as a combination of two components: a state transition function and an
-//! output function. Let `U` be the state space and `V` be the output space.
-//! Then with the two functions
-//!
-//! ```text
-//! f : U -> U
-//! g : U -> V
-//! ```
-//!
-//! the `i`th state and output are
-//!
-//! ```text
-//! u_i = f(f(... f(u_0)))
-//!       \_______/
-//!        i times
-//!
-//! v_i = g(u_i)
-//! ```
-//!
-//! respectively. In our case, the state space is `NonZeroU128` and the
-//! output space is `u64`.
-//!
-//! ```text
-//! f : NonZeroU128 -> NonZeroU128
-//! g : NonZeroU128 -> u64
-//! ```
-//!
-//! The size of the state space was chosen because 64 bits is too small for
-//! some plausible applications, while 128 bits should be sufficient for almost
-//! all non-cryptographic purposes.
-//!
-//! ## The State Transition Function and its Period
-//!
-//! The state transition function is a member of `GL(128, 2)`, that is, it is
-//! an invertible linear transformation from the vector space of dimension 128
-//! over the finite field of order 2 to itself.
-//!
-//! In order to see that `f` is invertible, note that ...
-//!
-//! TODO
-//!
-//! Checking that `f` has period `2**128 - 1` takes a bit of computation. Let
-//! `A` be the binary matrix corresponding to `f`. We can take `A` to the power
-//! of `2**128 - 1` using `O(log(n))` exponentiation and verify that it is the
-//! identity matrix.
-//!
-//! Also, we can factor `2**128 - 1` first into a product of Fermat numbers and
-//! then into a product of primes.
-//!
-//! ```text
-//! 2**128 - 1 = (2**1 + 1) (2**2 + 1) (2**4 + 1) (2**8 + 1) (2**16 + 1) (2**32 + 1)
-//!            = 3 * 5 * 17 * 257 * 65537 * 641 * 6700417
-//! ```
-//!
-//! Then it is sufficient to check that `A ** ((2**128 - 1) / p_i)` is *not*
-//! the identity for each prime factor `p_i` and to recall some elementary
-//! facts about finite groups.
-//!
-//! ## The Output Function
-//!
-//! ## A Survey of Alternate State Transition Functions
-//!
-//! - counter
-//!
-//! - LCG
-//!
-//! - LFSR
-//!
-//! - xorshift & co
-//!
-//! - approximating a random invertible transition
-//!
-//! ## A Survey of Alternate Output Functions
-//!
-//! - projection
-//!
-//! - xor, add
-//!
-//! - hash mixer
-//!
-//! ## Comparisons with Selected RNGs
-//!
-//! - pcg64-dxsm
-//!
-//! - xoroshiro128++
-//!
-//! - lxm-l64x128
-//!
-//! - mwc256xxa64
+#![doc = include_str!("../README.md")]
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#![deny(unsafe_op_in_unsafe_fn)]
+#![warn(elided_lifetimes_in_paths)]
+#![warn(missing_docs)]
+#![warn(non_ascii_idents)]
+#![warn(trivial_numeric_casts)]
+#![warn(unreachable_pub)]
+#![warn(unused_lifetimes)]
+#![warn(unused_qualifications)]
+#![warn(unused_results)]
 
 use core::array;
-use core::cell::Cell;
 use core::num::NonZeroU128;
 
 /// A fast non-cryptographic random number generator.
-///
-/// The [module documentation](self) discusses the design of the generator.
 
 #[derive(Clone)]
 pub struct Rng(NonZeroU128);
@@ -115,21 +25,6 @@ const fn umulh(x: u64, y: u64) -> u64 {
 }
 
 impl Rng {
-  /// The core operation of this random number generator. Takes a state and
-  /// returns a new state along with a pseudo-random number.
-
-  #[inline(always)]
-  pub const fn next(state: NonZeroU128) -> (NonZeroU128, u64) {
-    let s = state.get();
-    let a = s as u64;
-    let b = (s >> 64) as u64;
-    let c = a.rotate_right(7) ^ b;
-    let d = a ^ a >> 19;
-    let s = (c as u128) | ((d as u128) << 64);
-    let x = c.wrapping_add(a.wrapping_mul(b) ^ umulh(a, b));
-    (unsafe { NonZeroU128::new_unchecked(s) }, x)
-  }
-
   /// Creates a new random number generator starting from the given state. A
   /// good start state should be drawn from a distribution with sufficient
   /// entropy.
@@ -145,19 +40,16 @@ impl Rng {
 
   #[inline(always)]
   pub const fn from_seed(seed: [u8; 16]) -> Self {
-    match NonZeroU128::new(u128::from_le_bytes(seed)) {
-      Some(state) => Self::new(state),
-      None => {
-        let seed = *b"seeded with zero";
-        let seed = u128::from_le_bytes(seed);
-        Self::new(unsafe { NonZeroU128::new_unchecked(seed) })
-      }
-    }
+    let s = u128::from_le_bytes(seed);
+    let s = s | 1;
+    let s = unsafe { NonZeroU128::new_unchecked(s) };
+    Self::new(s)
   }
 
   /// Creates a new random number generator with a seed requested from the
   /// system through a method that may depend on the platform.
 
+  #[cfg(feature = "getrandom")]
   #[inline(never)]
   #[cold]
   pub fn from_system_seed() -> Self {
@@ -173,30 +65,40 @@ impl Rng {
     self.0
   }
 
-  /// Samples a `u64` from the uniform distribution.
-
-  #[inline(always)]
-  pub fn u64(&mut self) -> u64 {
-    let (s, x) = Self::next(self.0);
-    self.0 = s;
-    x
-  }
-
   /// Splits off a new random number generator that may be used in addition to
   /// the original.
 
   #[inline(always)]
   pub fn split(&mut self) -> Self {
-    let x = self.u64() | 1;
+    let x = self.u64();
     let y = self.u64();
     let s = (x as u128) | ((y as u128) << 64);
-    Self::new(unsafe { NonZeroU128::new_unchecked(s) })
+    let s = s | 1;
+    let s = unsafe { NonZeroU128::new_unchecked(s) };
+    Self::new(s)
+  }
+
+  /// Samples a `u64` from the uniform distribution.
+
+  #[inline(always)]
+  pub fn u64(&mut self) -> u64 {
+    let s = self.0;
+    let s = s.get();
+    let a = s as u64;
+    let b = (s >> 64) as u64;
+    let c = a.rotate_right(7) ^ b;
+    let d = a ^ a >> 19;
+    let x = c.wrapping_add(a.wrapping_mul(b) ^ umulh(a, b));
+    let s = (c as u128) | ((d as u128) << 64);
+    let s = unsafe { NonZeroU128::new_unchecked(s) };
+    self.0 = s;
+    x
   }
 
   /// Samples an array of i.i.d. `u64`s from the uniform distribution.
 
-  #[inline]
-  pub fn chunk<const N: usize>(&mut self ) -> [u64; N] {
+  #[inline(always)]
+  pub fn array_u64<const N: usize>(&mut self ) -> [u64; N] {
     array::from_fn(|_| self.u64())
   }
 
@@ -222,34 +124,34 @@ impl Rng {
   }
 }
 
+#[cfg(feature = "thread-local")]
 pub mod thread_local {
   //! This module provides access to a thread-local instance of the random
   //! number generator.
 
   use super::*;
+  use core::cell::Cell;
 
   std::thread_local! {
     static RNG: Cell<u128> = const { Cell::new(0) };
   }
 
   #[inline(always)]
-  fn with_rng_non_reentrant<F, A>(f: F) -> A where F: FnOnce(&mut Rng) -> A {
+  fn with<F, A>(f: F) -> A
+  where
+    F: FnOnce(&mut Rng) -> A
+  {
     RNG.with(|c| {
-      let mut g =
-        match NonZeroU128::new(c.get()) {
-          None => Rng::from_system_seed(),
-          Some(state) => Rng::new(state)
-        };
-      let a = f(&mut g);
-      c.set(u128::from(g.state()));
-      a
+      let s = c.get();
+      let s = NonZeroU128::new(s);
+      let g = match s { None => Rng::from_system_seed(), Some(s) => Rng::new(s) };
+      let mut g = g;
+      let x = f(&mut g);
+      let s = g.state();
+      let s = s.get();
+      c.set(s);
+      x
     })
-  }
-
-  /// Samples a `u64` from the uniform distribution.
-
-  pub fn u64() -> u64 {
-    with_rng_non_reentrant(Rng::u64)
   }
 
   /// Splits off a new random number generator from the thread-local generator.
@@ -259,18 +161,24 @@ pub mod thread_local {
   /// accessing thread-local storage.
 
   pub fn split() -> Rng {
-    with_rng_non_reentrant(Rng::split)
+    with(Rng::split)
+  }
+
+  /// Samples a `u64` from the uniform distribution.
+
+  pub fn u64() -> u64 {
+    with(Rng::u64)
   }
 
   /// Samples an array of i.i.d. `u64`s from the uniform distribution.
 
-  pub fn chunk<const N: usize>() -> [u64; N] {
-    with_rng_non_reentrant(Rng::chunk)
+  pub fn array_u64<const N: usize>() -> [u64; N] {
+    with(Rng::array_u64)
   }
 
   /// Fills a slice with a i.i.d. bytes sampled from the uniform distribution.
 
   pub fn fill(dst: &mut [u8]) {
-    with_rng_non_reentrant(|g| g.fill(dst))
+    with(|g| g.fill(dst))
   }
 }
