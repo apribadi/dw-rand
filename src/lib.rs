@@ -61,7 +61,7 @@ impl Rng {
   /// Accesses the random number generator's current state.
 
   #[inline(always)]
-  pub fn state(&self) -> NonZeroU128 {
+  pub const fn state(&self) -> NonZeroU128 {
     self.0
   }
 
@@ -154,7 +154,7 @@ pub mod thread_local {
     })
   }
 
-  /// Splits off a new random number generator from the thread-local generator.
+  /// Splits off a random number generator from the thread-local instance.
   ///
   /// If you need to generate many random numbers, then it is good to first get
   /// a `split` generator because you can then use that generator without

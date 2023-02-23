@@ -1,4 +1,5 @@
-use crate::prelude::*;
+pub use xox_random::Rng;
+pub use expect_test::expect;
 
 #[test]
 fn test_vectors() {
