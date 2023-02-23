@@ -93,6 +93,19 @@ impl Rng {
     let s = unsafe { NonZeroU128::new_unchecked(s) };
     self.0 = s;
     x
+    /*
+    let s = self.0;
+    let s = s.get();
+    let a = s as u64;
+    let b = (s >> 64) as u64;
+    let c = b ^ b << 7;
+    let d = a ^ a >> 9;
+    let x = a.wrapping_mul(b) ^ umulh(a, b);
+    let s = (c as u128) | ((d as u128) << 64);
+    let s = unsafe { NonZeroU128::new_unchecked(s) };
+    self.0 = s;
+    x
+      */
   }
 
   /// Samples an array of i.i.d. `u64`s from the uniform distribution.

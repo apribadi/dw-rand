@@ -1,4 +1,4 @@
-pub use xox_random::Rng;
+pub use dw_rand::Rng;
 pub use expect_test::expect;
 
 #[test]

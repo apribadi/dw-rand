@@ -1,7 +1,7 @@
 // Writes a sequence of pseudo-random bytes to stdout.
 
 use std::io::Write;
-use xox_random::Rng;
+use dw_rand::Rng;
 
 fn main() {
   let mut g = Rng::from_seed(*b"autovivification");

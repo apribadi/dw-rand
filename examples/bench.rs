@@ -1,6 +1,6 @@
 use std::time::Instant;
 use std::hint;
-use xox_random::Rng as Xox;
+use dw_rand::Rng;
 use trivium::Trivium64;
 
 const COUNT: usize = 100_000_000;
@@ -19,7 +19,7 @@ pub trait BenchRng {
   fn u64_noinline(&mut self) -> u64 { self.u64() }
 }
 
-impl BenchRng for Xox {
+impl BenchRng for Rng {
   fn from_seed(seed: [u8; 16]) -> Self {
     Self::from_seed(seed)
   }
@@ -161,7 +161,7 @@ fn bench_loop<T: BenchRng>(rng: &mut T, count: usize) -> u64 {
 }
 
 #[inline(never)]
-fn bench_loop_2x(rng: &mut Xox, count: usize) -> u64 {
+fn bench_loop_2x(rng: &mut Rng, count: usize) -> u64 {
   let mut rng2 = rng.split();
   let mut s = 0u64;
   for _ in 0 .. count / 2 {
@@ -190,8 +190,8 @@ fn bench_loop_xoroshiro128pp(rng: &mut Xoroshiro128pp, count: usize) -> u64 {
 }
 
 #[inline(never)]
-fn bench_loop_xox(rng: &mut Xox, count: usize) -> u64 {
-  bench_loop::<Xox>(rng, count)
+fn bench_loop_dw(rng: &mut Rng, count: usize) -> u64 {
+  bench_loop::<Rng>(rng, count)
 }
 
 #[inline(never)]
@@ -215,8 +215,8 @@ fn bench_loop_noinline_xoroshiro128pp(rng: &mut Xoroshiro128pp, count: usize) ->
 }
 
 #[inline(never)]
-fn bench_loop_noinline_xox(rng: &mut Xox, count: usize) -> u64 {
-  bench_loop_noinline::<Xox>(rng, count)
+fn bench_loop_noinline_dw(rng: &mut Rng, count: usize) -> u64 {
+  bench_loop_noinline::<Rng>(rng, count)
 }
 
 #[inline(never)]
@@ -233,13 +233,13 @@ fn main() {
   warmup();
   run_bench("pcg64dxsm", bench_loop_pcg64dxsm);
   run_bench("xoroshiro128++", bench_loop_xoroshiro128pp);
-  run_bench("xox", bench_loop_xox);
-  run_bench("xox 2x", bench_loop_2x);
+  run_bench("dw", bench_loop_dw);
+  run_bench("dw 2x", bench_loop_2x);
   run_bench("trivium", bench_loop_trivium);
   run_bench("mwc256xxa64", bench_loop_mwc256xxa64);
   run_bench("pcg64dxsm (noinline)", bench_loop_noinline_pcg64dxsm);
   run_bench("xoroshiro128++ (noinline)", bench_loop_noinline_xoroshiro128pp);
-  run_bench("xox (noinline)", bench_loop_noinline_xox);
+  run_bench("dw (noinline)", bench_loop_noinline_dw);
   run_bench("trivium (noinline)", bench_loop_noinline_trivium);
   run_bench("mwc256xxa64 (noinline)", bench_loop_noinline_mwc256xxa64);
 }
